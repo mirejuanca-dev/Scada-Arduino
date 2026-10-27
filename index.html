@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>MiniSCADA</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#2b3037">
+<style>
+/* Estilo HMI de alto rendimiento (ISA-101): fondo gris neutro, el color se reserva para lo anormal */
+:root{--bg:#cfd4da;--pn:#e4e7eb;--bd:#aab1ba;--tx:#1b2128;--mu:#586270;--tr:#9aa3ae;--ln:#2b3a4a;--w:#e0a800;--a:#d62d2d;--bt:#2b3037;--bt-t:#f1f3f5;--rd:4px}
+@media(prefers-color-scheme:dark){:root{--bg:#22272d;--pn:#2e343c;--bd:#454d58;--tx:#e8ebef;--mu:#a1abb8;--tr:#4a525d;--ln:#cfd6df;--bt:#e8ebef;--bt-t:#1b2128}}
+*{box-sizing:border-box}
+html{height:100%}
+body{margin:0;min-height:100%;background:var(--bg);color:var(--tx);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px 16px}
+h1{font-size:1.35rem;margin:0 auto 0 0;font-weight:700;letter-spacing:.2px}
+h2{font-size:1rem;margin:0 0 10px;font-weight:650}
+main{display:grid;gap:12px;padding:0 16px 20px;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));max-width:1200px;margin:auto}
+section{background:var(--pn);border:1px solid var(--bd);border-radius:var(--rd);padding:14px;min-width:0}
+.full{grid-column:1/-1}
+button{font:inherit;font-weight:600;border:1px solid var(--bt);background:var(--bt);color:var(--bt-t);border-radius:var(--rd);padding:8px 14px;cursor:pointer}
+button.s{background:transparent;color:var(--tx);border-color:var(--bd)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:focus-visible,input:focus-visible{outline:3px solid var(--w);outline-offset:2px}
+#est{padding:4px 10px;border:1px solid var(--bd);border-radius:var(--rd);font-weight:600;background:var(--pn)}
+#est.ok{background:var(--bt);color:var(--bt-t)}
+#est.w{background:var(--w);color:#1b2128;border-color:var(--w)}
+#aviso{display:none;margin:0 16px 12px;padding:10px 14px;border:1px solid var(--w);border-left-width:6px;background:var(--pn);border-radius:var(--rd);max-width:1168px}
+@media(min-width:1232px){#aviso{margin:0 auto 12px}}
+svg{width:100%;max-width:340px;display:block;margin:auto}
+.num{font-variant-numeric:tabular-nums;font-family:ui-monospace,"SF Mono",Consolas,monospace}
+#lv{display:inline-block;min-width:5.5em;text-align:center;padding:3px 10px;border-radius:var(--rd);font-weight:700;border:1px solid var(--bd)}
+#lv.W{background:var(--w);color:#1b2128;border-color:var(--w)}
+#lv.A{background:var(--a);color:#fff;border-color:var(--a)}
+.row{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;margin-top:8px;color:var(--mu)}
+input[type=range]{width:100%;accent-color:var(--bt);margin:10px 0}
+#cfg{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+label{display:grid;gap:3px;color:var(--mu);font-size:.9rem}
+input:not([type=range]){font:inherit;color:var(--tx);background:var(--bg);border:1px solid var(--bd);border-radius:var(--rd);padding:6px 8px;width:100%}
+canvas{width:100%;height:260px;display:block}
+ul{list-style:none;margin:10px 0 0;padding:0;max-height:170px;overflow:auto}
+li{padding:4px 0;border-top:1px solid var(--bd)}
+</style>
+</head>
+<body>
+<header>
+ <h1>MiniSCADA</h1>
+ <span id="est">Desconectado</span>
+ <button id="bC">Conectar Arduino</button>
+ <button id="bD" class="s" hidden>Desconectar</button>
+ <button id="bM" class="s">Iniciar demo</button>
+</header>
+<div id="aviso" role="status"></div>
+<main>
+ <section>
+  <h2>Entrada analógica AI0</h2>
+  <svg viewBox="0 0 180 112" role="img" aria-label="Indicador de la variable de proceso">
+   <path d="M10 90A80 80 0 0 1 170 90" fill="none" stroke="var(--tr)" stroke-width="14"/>
+   <path id="ga" d="M10 90A80 80 0 0 1 170 90" fill="none" stroke="var(--ln)" stroke-width="14" stroke-dasharray="0 252"/>
+   <text id="gv" class="num" x="90" y="80" text-anchor="middle" font-size="26" font-weight="700" fill="currentColor">--</text>
+   <text id="gu" x="90" y="102" text-anchor="middle" font-size="12" fill="var(--mu)"></text>
+  </svg>
+  <div class="row"><span id="lv">Sin datos</span><span class="num">ADC: <b id="raw">--</b> / 1023</span></div>
+ </section>
+ <section>
+  <h2>Salida AO (pin 9, PWM)</h2>
+  <label for="sl">Consigna manual: <b class="num" id="slv">0 %</b></label>
+  <input id="sl" type="range" min="0" max="100" step="1" value="0">
+  <div class="row"><span>Valor aplicado: <b class="num" id="aov">--</b></span><span class="num" id="cmd">Orden: AO 0</span></div>
+ </section>
+ <section class="full">
+  <h2>Tendencia (últimos 5 minutos)</h2>
+  <canvas id="tr" aria-label="Gráfica de tendencia"></canvas>
+ </section>
+ <section>
+  <h2>Escala y alarmas</h2>
+  <div id="cfg"></div>
+ </section>
+ <section>
+  <h2>Eventos</h2>
+  <button id="bX" class="s">Exportar histórico CSV</button>
+  <ul id="ev"></ul>
+ </section>
+</main>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const DEF={min:0,max:100,u:"%",LL:5,L:15,H:85,HH:95,hy:2};
+let cfg=Object.assign({},DEF);
+try{Object.assign(cfg,JSON.parse(localStorage.getItem("msc")||"{}"))}catch(e){}
+const save=()=>{try{localStorage.setItem("msc",JSON.stringify(cfg))}catch(e){}};
+let mode="off",port,reader,writer,closed,keep=false,demoT,hist=[],al={HH:0,H:0,L:0,LL:0},lvl="OK",last=0,ao=0,pv=null,raw=null;
+
+/* Configuración */
+const F=[["min","Mínimo escala"],["max","Máximo escala"],["u","Unidad"],["LL","Alarma LL"],["L","Alarma L"],["H","Alarma H"],["HH","Alarma HH"],["hy","Histéresis"]];
+$("cfg").innerHTML=F.map(([k,t])=>`<label>${t}<input id="c_${k}" ${k=="u"?"":'type="number" step="any"'} value="${cfg[k]}"></label>`).join("");
+F.forEach(([k])=>$("c_"+k).addEventListener("change",e=>{
+ if(k=="u")cfg.u=e.target.value;
+ else{const v=parseFloat(e.target.value);cfg[k]=isNaN(v)?DEF[k]:v;e.target.value=cfg[k]}
+ save();$("gu").textContent=cfg.u;
+}));
+$("gu").textContent=cfg.u;
+
+/* Eventos */
+function log(m){const li=document.createElement("li");li.textContent=new Date().toLocaleTimeString("es-ES")+"  "+m;$("ev").prepend(li);while($("ev").children.length>60)$("ev").lastChild.remove()}
+
+/* Estado de conexión */
+function setMode(m){
+ mode=m;const e=$("est");
+ e.textContent={off:"Desconectado",serial:"Conectado",demo:"Modo demo"}[m];
+ e.className=m=="off"?"":"ok";
+ $("bC").hidden=m=="serial";$("bD").hidden=m!="serial";
+ $("bM").textContent=m=="demo"?"Parar demo":"Iniciar demo";$("bM").disabled=m=="serial";
+}
+setInterval(()=>{if(mode!="off"&&Date.now()-last>2000){$("est").textContent="Sin datos";$("est").className="w"}else if(mode!="off"){setMode(mode)}},1000);
+
+/* Datos y alarmas */
+function evalAl(v){
+ const{LL,L,H,HH,hy}=cfg;
+ al.HH=al.HH?v>HH-hy:v>=HH;al.H=al.H?v>H-hy:v>=H;
+ al.L=al.L?v<L+hy:v<=L;al.LL=al.LL?v<LL+hy:v<=LL;
+ const n=al.HH?"HH":al.H?"H":al.LL?"LL":al.L?"L":"OK";
+ if(n!=lvl){log(n=="OK"?"Vuelve a la normalidad ("+v.toFixed(1)+" "+cfg.u+")":"Alarma "+n+" ("+v.toFixed(1)+" "+cfg.u+")");lvl=n}
+}
+function onDato(d){
+ if(typeof d.ai0!="number")return;
+ raw=d.ai0;last=Date.now();
+ pv=cfg.min+raw*(cfg.max-cfg.min)/1023;
+ if(typeof d.ao=="number")ao=d.ao;
+ hist.push([last,raw,pv,ao]);if(hist.length>36000)hist.shift();
+ evalAl(pv);ui();
+}
+function ui(){
+ const f=Math.max(0,Math.min(1,(pv-cfg.min)/((cfg.max-cfg.min)||1)));
+ const c=lvl=="OK"?"--ln":lvl.length==1?"--w":"--a";
+ $("ga").setAttribute("stroke-dasharray",(f*251.3).toFixed(1)+" 252");$("ga").style.stroke="var("+c+")";
+ $("gv").textContent=pv.toFixed(1);$("raw").textContent=raw;
+ const l=$("lv");l.textContent=lvl=="OK"?"Normal":"Alarma "+lvl;l.className=lvl=="OK"?"":lvl.length==1?"W":"A";
+ $("aov").textContent=Math.round(ao/2.55)+" % ("+ao+"/255)";
+}
+
+/* Web Serial */
+async function conectar(){
+ try{
+  port=await navigator.serial.requestPort();
+  stopDemo();
+  await port.open({baudRate:115200});
+  writer=port.writable.getWriter();keep=true;setMode("serial");
+  log("Puerto abierto. El Arduino se reinicia al conectar: espera 1-2 s");
+  leer();
+ }catch(e){if(e.name!="NotFoundError")log("No se pudo conectar: "+e.message);setMode("off")}
+}
+async function leer(){
+ const dec=new TextDecoderStream();
+ closed=port.readable.pipeTo(dec.writable).catch(()=>{});
+ reader=dec.readable.getReader();let b="";
+ try{
+  for(;;){
+   const{value,done}=await reader.read();if(done)break;
+   b+=value;if(b.length>2000)b="";
+   let i;while((i=b.indexOf("\n"))>=0){const s=b.slice(0,i).trim();b=b.slice(i+1);if(s[0]=="{")try{onDato(JSON.parse(s))}catch(e){}}
+  }
+ }catch(e){log("Error de lectura: "+e.message)}
+ if(keep)cerrar();
+}
+async function cerrar(){
+ keep=false;
+ try{await reader.cancel()}catch(e){}
+ try{await closed}catch(e){}
+ try{writer.releaseLock()}catch(e){}
+ try{await port.close()}catch(e){}
+ port=reader=writer=null;setMode("off");log("Puerto cerrado");
+}
+async function enviar(s){
+ if(mode=="serial"&&writer){try{await writer.write(new TextEncoder().encode(s+"\n"))}catch(e){log("Error de envío: "+e.message)}}
+ else if(mode=="demo")ao=parseInt(s.slice(3));
+}
+$("sl").addEventListener("input",e=>$("slv").textContent=e.target.value+" %");
+$("sl").addEventListener("change",e=>{const n=Math.round(e.target.value*2.55);$("cmd").textContent="Orden: AO "+n;enviar("AO "+n);log("Consigna de salida: "+e.target.value+" %")});
+
+/* Modo demo */
+function startDemo(){
+ const t0=Date.now();setMode("demo");log("Demo iniciada (señal simulada)");
+ demoT=setInterval(()=>{
+  const s=(Date.now()-t0)/1000,v=512+420*Math.sin(s/9)+(Math.random()-.5)*16;
+  onDato({ai0:Math.max(0,Math.min(1023,Math.round(v))),ao:ao});
+ },100);
+}
+function stopDemo(){if(demoT){clearInterval(demoT);demoT=null;if(mode=="demo")setMode("off")}}
+
+/* Tendencia */
+function draw(){
+ const c=$("tr"),r=c.getBoundingClientRect(),d=devicePixelRatio||1;
+ if(!r.width)return;
+ if(c.width!=Math.round(r.width*d)){c.width=Math.round(r.width*d);c.height=Math.round(r.height*d)}
+ const x=c.getContext("2d");x.setTransform(d,0,0,d,0,0);x.clearRect(0,0,r.width,r.height);
+ const st=getComputedStyle(document.documentElement),col=n=>st.getPropertyValue(n).trim();
+ const L=46,R=10,T=8,B=22,w=r.width-L-R,h=r.height-T-B,span=300000,now=Date.now();
+ const lo=cfg.min,rg=(cfg.max-cfg.min)||1,Y=v=>T+(1-(v-lo)/rg)*h,X=t=>L+(1-(now-t)/span)*w;
+ x.font="12px system-ui,sans-serif";x.lineWidth=1;
+ for(let i=0;i<=4;i++){
+  const v=lo+rg*i/4,y=Y(v);
+  x.strokeStyle=col("--bd");x.beginPath();x.moveTo(L,y);x.lineTo(L+w,y);x.stroke();
+  x.fillStyle=col("--mu");x.textAlign="right";x.fillText(v.toFixed(0),L-6,y+4);
+ }
+ x.textAlign="center";x.fillStyle=col("--mu");
+ for(let m=0;m<=5;m++)x.fillText(m==5?"ahora":"-"+(5-m)+" min",L+w*m/5,r.height-5);
+ [["LL","--a"],["L","--w"],["H","--w"],["HH","--a"]].forEach(([k,cv])=>{
+  const y=Y(cfg[k]);if(y<T||y>T+h)return;
+  x.strokeStyle=col(cv);x.setLineDash([6,4]);x.beginPath();x.moveTo(L,y);x.lineTo(L+w,y);x.stroke();x.setLineDash([]);
+ });
+ let i=hist.length-1;while(i>0&&hist[i][0]>now-span)i--;
+ x.strokeStyle=col("--ln");x.lineWidth=2;x.beginPath();
+ for(let j=i;j<hist.length;j++){const px=X(hist[j][0]),py=Math.max(T,Math.min(T+h,Y(hist[j][2])));j==i?x.moveTo(px,py):x.lineTo(px,py)}
+ x.stroke();
+}
+setInterval(draw,250);addEventListener("resize",draw);
+
+/* Exportar CSV (separador ; y coma decimal para Excel en español) */
+function csv(){
+ if(!hist.length)return log("No hay datos que exportar");
+ const f=n=>n.toFixed(2).replace(".",",");
+ const rows=["fecha_hora;adc;valor_"+cfg.u+";ao_0_255"].concat(hist.map(h=>[new Date(h[0]).toISOString(),h[1],f(h[2]),h[3]].join(";")));
+ const a=document.createElement("a");
+ a.href=URL.createObjectURL(new Blob(["\ufeff"+rows.join("\r\n")],{type:"text/csv"}));
+ a.download="miniscada_"+new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")+".csv";
+ a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);log("CSV exportado ("+hist.length+" muestras)");
+}
+
+/* Arranque */
+$("bC").addEventListener("click",conectar);
+$("bD").addEventListener("click",cerrar);
+$("bM").addEventListener("click",()=>mode=="demo"?stopDemo():startDemo());
+$("bX").addEventListener("click",csv);
+if(!("serial" in navigator)){
+ $("bC").disabled=true;
+ $("aviso").style.display="block";
+ $("aviso").textContent="Este navegador no admite Web Serial (Safari en iPad no la incluye). Para conectar el Arduino usa Chrome o Edge en Windows. Mientras tanto la app funciona en modo demo.";
+ startDemo();
+}else{
+ navigator.serial.addEventListener("disconnect",()=>{if(mode=="serial"){log("Arduino desconectado");cerrar()}});
+ setMode("off");
+}
+try{if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js")}catch(e){}
+</script>
+</body>
+</html>
